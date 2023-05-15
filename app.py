@@ -3,7 +3,7 @@ from flask import Flask, render_template, request, redirect, url_for
 import pandas as pd
 from flask_bootstrap import Bootstrap
 from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, SelectMultipleField, SelectField
+from wtforms import StringField, SubmitField, SelectMultipleField, SelectField, widgets
 from wtforms.validators import DataRequired
 from flask_mail import Mail, Message
 import secrets
@@ -23,12 +23,21 @@ app.config.update(
 )
 mail = Mail(app)
 
+class MultiCheckboxField(SelectMultipleField):
+    widget = widgets.ListWidget(prefix_label=False)
+    option_widget = widgets.CheckboxInput()
+
 class FilterForm(FlaskForm):
     
-    columns = SelectMultipleField("Visible Columns", coerce=str, validators=[DataRequired()])
+    columns = MultiCheckboxField("Visible Columns", coerce=str, default=['Name', 'Email', 'Age'], validators=[DataRequired()])
     custom_filter = SelectField("Custom Filter", choices=[('none', 'None'), ('age_gt_50', 'Age > 50')], default='none')
     column_name = StringField('Column Name', validators=[DataRequired()])
     filter_value = StringField('Filter Value', validators=[DataRequired()])
+
+    def __init__(self, *args, **kwargs):
+        super(FilterForm, self).__init__(*args, **kwargs)
+        self.columns.choices = [(col, col) for col in self.columns]
+
     submit = SubmitField('Filter')
 
 
@@ -38,12 +47,23 @@ def index():
     form = FilterForm()
     data = pd.read_csv('Hint Patients - 2023-05-15.csv')
 
+
+
     if form.validate_on_submit():
         column_name = form.column_name.data
         filter_value = form.filter_value.data
-        data = data[data[column_name] == filter_value]
+        selected_columns = form.columns.data
+        custom_filter = form.custom_filter.data
 
-    return render_template('index.html', data=data.to_dict(orient='records'), form=form)
+        data = data[selected_columns]
+
+
+        if custom_filter == 'age_gt_50':
+            data = data[(data['Age'] > 50) & data['Age'].notna()]
+        elif column_name and filter_value:
+            data = data[data[column_name] == filter_value]
+
+    return render_template('index.html', data=data.to_dict(orient='records'), form=form, columns=data.columns)
 
 
 @app.route('/send_emails', methods=['POST'])
